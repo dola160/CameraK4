@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dirt Detection Camera</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    .scanner-line {
+      animation: scan 2.2s ease-in-out infinite alternate;
+    }
+    @keyframes scan {
+      0% { top: 0%; opacity: 0.2; }
+      50% { opacity: 0.85; }
+      100% { top: 100%; opacity: 0.2; }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-hidden bg-slate-950">
+
+  <!-- Header -->
+  <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 px-4 py-2.5 flex items-center justify-between shrink-0 z-20">
+    <div class="flex items-center space-x-2.5">
+      <div class="bg-indigo-600/20 text-indigo-400 p-2 rounded-lg border border-indigo-500/30">
+        <i data-lucide="scan-search" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="text-sm font-bold text-white flex items-center gap-2">
+          Dirt Vision AI <span class="bg-indigo-500/20 text-indigo-300 text-[10px] px-1.5 py-0.5 rounded border border-indigo-500/30 font-mono">v2.6</span>
+        </h1>
+        <p class="text-[11px] text-slate-400">Surface Cleanliness & Stain Inspection</p>
+      </div>
+    </div>
+
+    <!-- Stats Badge Header -->
+    <div class="flex items-center space-x-4 text-xs font-mono">
+      <div class="flex items-center space-x-1.5 bg-slate-950/60 px-2.5 py-1 rounded-md border border-slate-800">
+        <span class="text-slate-400 text-[11px]">Cleanliness:</span>
+        <span id="headerScore" class="font-bold text-emerald-400 text-xs">--%</span>
+      </div>
+      <div class="flex items-center space-x-1.5 bg-slate-950/60 px-2.5 py-1 rounded-md border border-slate-800">
+        <span class="text-slate-400 text-[11px]">Spots:</span>
+        <span id="headerCount" class="font-bold text-amber-400 text-xs">0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Work Area -->
+  <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+
+    <!-- CAMERA VIEWPORT CONTAINER (Expanded Frame) -->
+    <div class="flex-1 bg-black relative flex flex-col items-center justify-between overflow-hidden min-h-[55vh] md:min-h-0">
+      
+      <!-- Hidden Source Video Element -->
+      <video id="videoElement" autoplay playsinline muted class="hidden"></video>
+
+      <!-- Status Indicator Badge (Top Floating) -->
+      <div class="absolute top-3 left-3 flex items-center gap-2 bg-slate-900/80 backdrop-blur px-3 py-1 rounded-full border border-slate-700/80 text-xs text-slate-300 z-10 shadow-lg">
+        <span id="statusIndicator" class="w-2 h-2 rounded-full bg-slate-500"></span>
+        <span id="statusText" class="font-medium text-[11px]">Idle</span>
+      </div>
+
+      <!-- Center Canvas Canvas Layer -->
+      <div id="canvasContainer" class="relative w-full h-full flex-1 flex items-center justify-center p-2 overflow-hidden">
+        <canvas id="viewCanvas" class="max-w-full max-h-full object-contain rounded border border-slate-800 shadow-2xl bg-slate-950"></canvas>
+        <canvas id="offscreenCanvas" class="hidden"></canvas>
+
+        <!-- Live Scanner Effect Overlay -->
+        <div id="scanOverlay" class="absolute inset-2 pointer-events-none hidden">
+          <div class="scanner-line absolute left-0 right-0 h-0.5 bg-cyan-400 shadow-[0_0_15px_#22d3ee]"></div>
+          <div class="absolute inset-0 border border-indigo-500/30 rounded pointer-events-none"></div>
+        </div>
+
+        <!-- Camera Placeholder UI -->
+        <div id="placeholderUI" class="text-center p-6 max-w-sm my-auto">
+          <div class="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-3 border border-slate-800">
+            <i data-lucide="camera" class="w-8 h-8 text-indigo-400"></i>
+          </div>
+          <h3 class="text-base font-semibold text-slate-200 mb-1">Camera Standby</h3>
+          <p class="text-xs text-slate-400 mb-4">Start your live camera or load a sample preset to detect dirt spots.</p>
+          <button id="btnStartCamCenter" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-lg text-xs transition-colors shadow-lg flex items-center justify-center gap-2 mx-auto">
+            <i data-lucide="video" class="w-4 h-4"></i> Turn On Camera
+          </button>
+        </div>
+      </div>
+
+      <!-- VIEW CONTROL TOOLBAR (Non-overlapping, clearly visible controls) -->
+      <div class="w-full bg-slate-900/95 backdrop-blur border-t border-slate-800 px-3 py-2 z-10 shrink-0">
+        <div class="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+          
+          <!-- Rendering View Modes -->
+          <div class="flex items-center gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800">
+            <button id="btnModeOriginal" class="px-2.5 py-1 text-xs rounded-md font-medium transition-all bg-indigo-600 text-white shadow">Normal</button>
+            <button id="btnModeHeatmap" class="px-2.5 py-1 text-xs rounded-md font-medium transition-all text-slate-400 hover:text-white">Heatmap</button>
+            <button id="btnModeThreshold" class="px-2.5 py-1 text-xs rounded-md font-medium transition-all text-slate-400 hover:text-white whitespace-nowrap">High Contrast</button>
+          </div>
+
+          <!-- Overlay Toggle Checkboxes -->
+          <div class="flex items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-slate-800 text-slate-300">
+            <label class="flex items-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" id="toggleGrid" class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0">
+              <span class="text-[11px] font-medium">Grid</span>
+            </label>
+            <div class="w-px h-3 bg-slate-800"></div>
+            <label class="flex items-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" id="toggleBoxes" checked class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0">
+              <span class="text-[11px] font-medium">Boxes</span>
+            </label>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SIDE PANEL / INSPECTION SETTINGS -->
+    <div class="w-full md:w-80 lg:w-96 bg-slate-900/90 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col h-auto md:h-full z-10 shrink-0 overflow-y-auto">
+
+      <!-- Navigation Tabs -->
+      <div class="flex border-b border-slate-800 bg-slate-950/40 text-xs font-medium shrink-0">
+        <button id="tabControls" class="flex-1 py-2.5 text-center border-b-2 border-indigo-500 text-indigo-400 font-semibold">Controls</button>
+        <button id="tabAnalysis" class="flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200">Analysis & Report</button>
+      </div>
+
+      <!-- TAB 1: CONTROLS & SETTINGS -->
+      <div id="panelControls" class="p-4 space-y-4 flex-1">
+
+        <!-- Input Source Selector -->
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Input Source</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btnToggleCam" class="flex items-center justify-center gap-2 py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-all shadow">
+              <i data-lucide="video" class="w-4 h-4"></i> Live Camera
+            </button>
+            <label class="flex items-center justify-center gap-2 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium cursor-pointer transition-all border border-slate-700">
+              <i data-lucide="upload" class="w-4 h-4"></i> Upload File
+              <input type="file" id="fileInput" accept="image/*" class="hidden">
+            </label>
+          </div>
+        </div>
+
+        <!-- Sample Images for quick testing -->
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Preset Test Samples</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button class="preset-btn bg-slate-950 hover:border-indigo-500 border border-slate-800 rounded p-1.5 text-center transition-all group" data-preset="dirty-counter">
+              <div class="h-9 bg-amber-950/40 rounded flex items-center justify-center mb-1 group-hover:scale-95 transition-transform">
+                <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+              </div>
+              <span class="text-[10px] text-slate-400 block truncate">Dirty Table</span>
+            </button>
+
+            <button class="preset-btn bg-slate-950 hover:border-indigo-500 border border-slate-800 rounded p-1.5 text-center transition-all group" data-preset="smudged-glass">
+              <div class="h-9 bg-cyan-950/40 rounded flex items-center justify-center mb-1 group-hover:scale-95 transition-transform">
+                <i data-lucide="app-window" class="w-4 h-4 text-cyan-400"></i>
+              </div>
+              <span class="text-[10px] text-slate-400 block truncate">Smudged Glass</span>
+            </button>
+
+            <button class="preset-btn bg-slate-950 hover:border-indigo-500 border border-slate-800 rounded p-1.5 text-center transition-all group" data-preset="clean-tile">
+              <div class="h-9 bg-emerald-950/40 rounded flex items-center justify-center mb-1 group-hover:scale-95 transition-transform">
+                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+              </div>
+              <span class="text-[10px] text-slate-400 block truncate">Clean Floor</span>
+            </button>
+          </div>
+        </div>
+
+        <hr class="border-slate-800">
+
+        <!-- Algorithm Sensitivity Tuning -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Detection Parameters</label>
+            <button id="btnResetParams" class="text-[11px] text-indigo-400 hover:underline">Reset</button>
+          </div>
+
+          <!-- Sensitivity Slider -->
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Sensitivity Threshold</span>
+              <span id="sensitivityVal" class="text-indigo-400 font-mono">45</span>
+            </div>
+            <input type="range" id="sensitivity" min="10" max="100" value="45" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+            <p class="text-[10px] text-slate-500 mt-0.5">Lower detects faint smudges; higher focuses on dark stains.</p>
+          </div>
+
+          <!-- Spot Min Size -->
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Min Particle Size</span>
+              <span id="minSizeVal" class="text-indigo-400 font-mono">4px</span>
+            </div>
+            <input type="range" id="minSize" min="2" max="25" value="4" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+          </div>
+
+          <!-- Texture Variance Filter -->
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Grain Noise Filter</span>
+              <span id="noiseFilterVal" class="text-indigo-400 font-mono">Medium</span>
+            </div>
+            <input type="range" id="noiseFilter" min="1" max="5" value="3" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+          </div>
+        </div>
+
+        <hr class="border-slate-800">
+
+        <!-- Calibration & Capture Buttons -->
+        <div class="space-y-2 pt-1">
+          <button id="btnCalibrate" class="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all">
+            <i data-lucide="sliders" class="w-4 h-4 text-amber-400"></i> Calibrate Background
+          </button>
+          <button id="btnSnapshot" class="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all shadow">
+            <i data-lucide="camera" class="w-4 h-4"></i> Save Inspection Image
+          </button>
+        </div>
+
+      </div>
+
+      <!-- TAB 2: ANALYSIS & REPORT -->
+      <div id="panelAnalysis" class="p-4 space-y-4 flex-1 hidden">
+
+        <!-- Cleanliness Score Card -->
+        <div class="bg-slate-950/80 rounded-xl p-4 border border-slate-800 text-center relative overflow-hidden">
+          <div class="text-[11px] text-slate-400 uppercase font-semibold tracking-wider mb-1">Surface Hygiene Rating</div>
+          <div id="hygieneBadge" class="text-3xl font-black font-mono my-1 text-emerald-400">95.4%</div>
+          <p id="hygieneVerdict" class="text-xs text-emerald-300 font-medium">Surface passes cleanliness standards.</p>
+          <div class="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+            <div id="hygieneBar" class="bg-emerald-400 h-full transition-all duration-500" style="width: 95%;"></div>
+          </div>
+        </div>
+
+        <!-- Metric Details -->
+        <div class="grid grid-cols-2 gap-2.5">
+          <div class="bg-slate-950/50 p-3 rounded-lg border border-slate-800">
+            <div class="text-[11px] text-slate-400">Detected Spots</div>
+            <div id="statSpotCount" class="text-xl font-bold font-mono text-amber-400 mt-0.5">3</div>
+            <div class="text-[10px] text-slate-500">Contaminant areas</div>
+          </div>
+          <div class="bg-slate-950/50 p-3 rounded-lg border border-slate-800">
+            <div class="text-[11px] text-slate-400">Affected Surface</div>
+            <div id="statDirtyArea" class="text-xl font-bold font-mono text-rose-400 mt-0.5">1.2%</div>
+            <div class="text-[10px] text-slate-500">Soiled coverage</div>
+          </div>
+        </div>
+
+        <!-- Dirt Severity Breakout -->
+        <div class="space-y-1.5">
+          <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Severity Classification</div>
+          
+          <div class="flex items-center justify-between text-xs p-2 bg-slate-950/40 rounded border border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span class="text-slate-300">Light Smudges / Dust</span>
+            </div>
+            <span id="cntLight" class="font-mono text-slate-400">2</span>
+          </div>
+
+          <div class="flex items-center justify-between text-xs p-2 bg-slate-950/40 rounded border border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+              <span class="text-slate-300">Moderate Stains</span>
+            </div>
+            <span id="cntModerate" class="font-mono text-slate-400">1</span>
+          </div>
+
+          <div class="flex items-center justify-between text-xs p-2 bg-slate-950/40 rounded border border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-rose-600"></span>
+              <span class="text-slate-300">Heavy Soiling / Grease</span>
+            </div>
+            <span id="cntHeavy" class="font-mono text-slate-400">0</span>
+          </div>
+        </div>
+
+        <!-- Hotspots List -->
+        <div>
+          <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Detected Hotspots</div>
+          <div id="hotspotList" class="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+            <div class="text-xs text-slate-500 text-center py-4 italic">No major contamination spots recorded.</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Notification Toast Container -->
+  <div id="toast" class="fixed bottom-16 left-1/2 -translate-x-1/2 md:bottom-6 md:left-6 md:translate-x-0 z-50 bg-slate-800 text-slate-100 text-xs px-3.5 py-2 rounded-lg border border-slate-700 shadow-2xl flex items-center gap-2 opacity-0 pointer-events-none transition-all duration-300">
+    <i data-lucide="info" class="w-4 h-4 text-indigo-400"></i>
+    <span id="toastMsg">Notification message</span>
+  </div>
+
+  <script>
+    // Initialize icons
+    lucide.createIcons();
+
+    // DOM Elements
+    const video = document.getElementById('videoElement');
+    const viewCanvas = document.getElementById('viewCanvas');
+    const offCanvas = document.getElementById('offscreenCanvas');
+    const viewCtx = viewCanvas.getContext('2d');
+    const offCtx = offCanvas.getContext('2d');
+
+    const btnToggleCam = document.getElementById('btnToggleCam');
+    const btnStartCamCenter = document.getElementById('btnStartCamCenter');
+    const fileInput = document.getElementById('fileInput');
+    const placeholderUI = document.getElementById('placeholderUI');
+    const scanOverlay = document.getElementById('scanOverlay');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusText = document.getElementById('statusText');
+
+    // Controls & Settings
+    const sensitivityInput = document.getElementById('sensitivity');
+    const sensitivityVal = document.getElementById('sensitivityVal');
+    const minSizeInput = document.getElementById('minSize');
+    const minSizeVal = document.getElementById('minSizeVal');
+    const noiseFilterInput = document.getElementById('noiseFilter');
+    const noiseFilterVal = document.getElementById('noiseFilterVal');
+    const btnResetParams = document.getElementById('btnResetParams');
+
+    const toggleGrid = document.getElementById('toggleGrid');
+    const toggleBoxes = document.getElementById('toggleBoxes');
+
+    // Display Modes
+    const btnModeOriginal = document.getElementById('btnModeOriginal');
+    const btnModeHeatmap = document.getElementById('btnModeHeatmap');
+    const btnModeThreshold = document.getElementById('btnModeThreshold');
+
+    // Stats & Reports
+    const headerScore = document.getElementById('headerScore');
+    const headerCount = document.getElementById('headerCount');
+    const hygieneBadge = document.getElementById('hygieneBadge');
+    const hygieneVerdict = document.getElementById('hygieneVerdict');
+    const hygieneBar = document.getElementById('hygieneBar');
+    const statSpotCount = document.getElementById('statSpotCount');
+    const statDirtyArea = document.getElementById('statDirtyArea');
+    const cntLight = document.getElementById('cntLight');
+    const cntModerate = document.getElementById('cntModerate');
+    const cntHeavy = document.getElementById('cntHeavy');
+    const hotspotList = document.getElementById('hotspotList');
+
+    // Tabs
+    const tabControls = document.getElementById('tabControls');
+    const tabAnalysis = document.getElementById('tabAnalysis');
+    const panelControls = document.getElementById('panelControls');
+    const panelAnalysis = document.getElementById('panelAnalysis');
+
+    // State Variables
+    let isStreaming = false;
+    let currentStream = null;
+    let mode = 'normal'; // 'normal', 'heatmap', 'threshold'
+    let baselineData = null;
+    let animFrameId = null;
+    let currentImage = null;
+
+    const presetGenerators = {
+      'dirty-counter': createDirtyTableSample,
+      'smudged-glass': createSmudgedGlassSample,
+      'clean-tile': createCleanTileSample
+    };
+
+    function init() {
+      setupEventListeners();
+      loadPreset('dirty-counter');
+    }
+
+    function setupEventListeners() {
+      btnToggleCam.addEventListener('click', toggleCamera);
+      btnStartCamCenter.addEventListener('click', toggleCamera);
+
+      fileInput.addEventListener('change', handleFileUpload);
+
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const presetName = e.currentTarget.getAttribute('data-preset');
+          loadPreset(presetName);
+        });
+      });
+
+      sensitivityInput.addEventListener('input', (e) => {
+        sensitivityVal.textContent = e.target.value;
+        requestProcess();
+      });
+
+      minSizeInput.addEventListener('input', (e) => {
+        minSizeVal.textContent = e.target.value + 'px';
+        requestProcess();
+      });
+
+      noiseFilterInput.addEventListener('input', (e) => {
+        const labels = ['Off', 'Low', 'Medium', 'High', 'Ultra'];
+        noiseFilterVal.textContent = labels[e.target.value - 1];
+        requestProcess();
+      });
+
+      btnResetParams.addEventListener('click', () => {
+        sensitivityInput.value = 45;
+        sensitivityVal.textContent = 45;
+        minSizeInput.value = 4;
+        minSizeVal.textContent = '4px';
+        noiseFilterInput.value = 3;
+        noiseFilterVal.textContent = 'Medium';
+        showToast('Parameters reset to default');
+        requestProcess();
+      });
+
+      btnModeOriginal.addEventListener('click', () => setMode('normal'));
+      btnModeHeatmap.addEventListener('click', () => setMode('heatmap'));
+      btnModeThreshold.addEventListener('click', () => setMode('threshold'));
+
+      toggleGrid.addEventListener('change', requestProcess);
+      toggleBoxes.addEventListener('change', requestProcess);
+
+      document.getElementById('btnCalibrate').addEventListener('click', calibrateBaseline);
+      document.getElementById('btnSnapshot').addEventListener('click', takeSnapshot);
+
+      tabControls.addEventListener('click', () => switchTab('controls'));
+      tabAnalysis.addEventListener('click', () => switchTab('analysis'));
+    }
+
+    function switchTab(tab) {
+      if (tab === 'controls') {
+        tabControls.className = 'flex-1 py-2.5 text-center border-b-2 border-indigo-500 text-indigo-400 font-semibold';
+        tabAnalysis.className = 'flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200';
+        panelControls.classList.remove('hidden');
+        panelAnalysis.classList.add('hidden');
+      } else {
+        tabAnalysis.className = 'flex-1 py-2.5 text-center border-b-2 border-indigo-500 text-indigo-400 font-semibold';
+        tabControls.className = 'flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200';
+        panelAnalysis.classList.remove('hidden');
+        panelControls.classList.add('hidden');
+      }
+    }
+
+    function setMode(newMode) {
+      mode = newMode;
+      const btns = [btnModeOriginal, btnModeHeatmap, btnModeThreshold];
+      btns.forEach(b => {
+        b.className = 'px-2.5 py-1 text-xs rounded-md font-medium transition-all text-slate-400 hover:text-white';
+      });
+
+      if (mode === 'normal') {
+        btnModeOriginal.className = 'px-2.5 py-1 text-xs rounded-md font-medium transition-all bg-indigo-600 text-white shadow';
+      } else if (mode === 'heatmap') {
+        btnModeHeatmap.className = 'px-2.5 py-1 text-xs rounded-md font-medium transition-all bg-indigo-600 text-white shadow';
+      } else if (mode === 'threshold') {
+        btnModeThreshold.className = 'px-2.5 py-1 text-xs rounded-md font-medium transition-all bg-indigo-600 text-white shadow';
+      }
+      requestProcess();
+    }
+
+    async function toggleCamera() {
+      if (isStreaming) {
+        stopCamera();
+        showToast('Camera stopped');
+      } else {
+        try {
+          currentStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' }
+          });
+          video.srcObject = currentStream;
+          video.play();
+          
+          video.onloadedmetadata = () => {
+            isStreaming = true;
+            currentImage = null;
+            placeholderUI.classList.add('hidden');
+            scanOverlay.classList.remove('hidden');
+
+            statusIndicator.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+            statusText.textContent = "Live Stream Active";
+
+            btnToggleCam.innerHTML = `<i data-lucide="video-off" class="w-4 h-4"></i> Stop Camera`;
+            btnToggleCam.className = "flex items-center justify-center gap-2 py-2 px-3 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium transition-all shadow";
+            lucide.createIcons();
+
+            startLoop();
+            showToast('Live camera connected');
+          };
+        } catch (err) {
+          console.error('Camera error:', err);
+          showToast('Unable to open camera. Using sample preset.');
+        }
+      }
+    }
+
+    function stopCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+      isStreaming = false;
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+
+      scanOverlay.classList.add('hidden');
+      statusIndicator.className = "w-2 h-2 rounded-full bg-slate-500";
+      statusText.textContent = "Idle";
+
+      btnToggleCam.innerHTML = `<i data-lucide="video" class="w-4 h-4"></i> Live Camera`;
+      btnToggleCam.className = "flex items-center justify-center gap-2 py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-all shadow";
+      lucide.createIcons();
+    }
+
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      stopCamera();
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          currentImage = img;
+          placeholderUI.classList.add('hidden');
+          statusIndicator.className = "w-2 h-2 rounded-full bg-amber-400";
+          statusText.textContent = "Loaded File Image";
+          processStaticImage();
+          showToast('Image file loaded');
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function startLoop() {
+      if (!isStreaming) return;
+      processFrame();
+      animFrameId = requestAnimationFrame(startLoop);
+    }
+
+    function requestProcess() {
+      if (!isStreaming && currentImage) {
+        processStaticImage();
+      }
+    }
+
+    function processStaticImage() {
+      if (!currentImage) return;
+      
+      const width = currentImage.width;
+      const height = currentImage.height;
+
+      viewCanvas.width = width;
+      viewCanvas.height = height;
+      offCanvas.width = width;
+      offCanvas.height = height;
+
+      offCtx.drawImage(currentImage, 0, 0, width, height);
+      analyzeAndRender(width, height);
+    }
+
+    function processFrame() {
+      if (!video.videoWidth) return;
+
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+
+      if (viewCanvas.width !== width || viewCanvas.height !== height) {
+        viewCanvas.width = width;
+        viewCanvas.height = height;
+        offCanvas.width = width;
+        offCanvas.height = height;
+      }
+
+      offCtx.drawImage(video, 0, 0, width, height);
+      analyzeAndRender(width, height);
+    }
+
+    // --- ALGORITHM LOGIC ---
+    function analyzeAndRender(width, height) {
+      const imgData = offCtx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      const length = data.length;
+
+      const displayData = viewCtx.createImageData(width, height);
+      const out = displayData.data;
+
+      const sensitivity = parseInt(sensitivityInput.value, 10);
+      const minRadius = parseInt(minSizeInput.value, 10);
+
+      const dirtMap = new Float32Array(width * height);
+      const grayscale = new Uint8Array(width * height);
+
+      for (let i = 0, p = 0; i < length; i += 4, p++) {
+        grayscale[p] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+      }
+
+      const step = Math.max(1, Math.floor(width / 160)); 
+      let totalLuma = 0;
+      let pixelCount = 0;
+
+      for (let y = 0; y < height; y += step) {
+        for (let x = 0; x < width; x += step) {
+          totalLuma += grayscale[y * width + x];
+          pixelCount++;
+        }
+      }
+      const globalAvgLuma = totalLuma / (pixelCount || 1);
+
+      let dirtPixels = 0;
+      const threshCutoff = (105 - sensitivity); 
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const p = y * width + x;
+          const i = p * 4;
+          const val = grayscale[p];
+
+          let localDiff = 0;
+          if (x > 0 && y > 0 && x < width - 1 && y < height - 1) {
+            const left = grayscale[p - 1];
+            const right = grayscale[p + 1];
+            const top = grayscale[p - width];
+            const bottom = grayscale[p + width];
+            localDiff = Math.abs(val - ((left + right + top + bottom) / 4));
+          }
+
+          const globalDiff = Math.max(0, globalAvgLuma - val);
+          let score = (globalDiff * 0.7) + (localDiff * 1.5);
+
+          if (baselineData && baselineData.length === length) {
+            const baseVal = (baselineData[i] * 0.299 + baselineData[i + 1] * 0.587 + baselineData[i + 2] * 0.114);
+            score = Math.max(0, baseVal - val);
+          }
+
+          if (score > threshCutoff) {
+            dirtMap[p] = score;
+            dirtPixels++;
+          } else {
+            dirtMap[p] = 0;
+          }
+
+          if (mode === 'normal') {
+            out[i] = data[i];
+            out[i + 1] = data[i + 1];
+            out[i + 2] = data[i + 2];
+            out[i + 3] = 255;
+          } else if (mode === 'threshold') {
+            if (dirtMap[p] > 0) {
+              out[i] = 244;
+              out[i + 1] = 63;
+              out[i + 2] = 94;
+            } else {
+              const dim = grayscale[p] * 0.3;
+              out[i] = dim;
+              out[i + 1] = dim;
+              out[i + 2] = dim;
+            }
+            out[i + 3] = 255;
+          } else if (mode === 'heatmap') {
+            if (dirtMap[p] > 0) {
+              const normScore = Math.min(1, (dirtMap[p] - threshCutoff) / 40);
+              out[i] = 255;
+              out[i + 1] = Math.floor(255 * (1 - normScore));
+              out[i + 2] = 0;
+              out[i + 3] = Math.floor(180 + normScore * 75);
+            } else {
+              const dim = grayscale[p] * 0.4;
+              out[i] = dim;
+              out[i + 1] = dim;
+              out[i + 2] = dim;
+              out[i + 3] = 255;
+            }
+          }
+        }
+      }
+
+      viewCtx.putImageData(displayData, 0, 0);
+
+      const clusters = findDirtClusters(dirtMap, width, height, minRadius, threshCutoff);
+      renderOverlays(width, height, clusters);
+      updateInspectionStats(width * height, dirtPixels, clusters);
+    }
+
+    function findDirtClusters(dirtMap, width, height, minRadius, cutoff) {
+      const visited = new Uint8Array(width * height);
+      const clusters = [];
+      const gridStep = Math.max(2, Math.floor(width / 320));
+
+      for (let y = 0; y < height; y += gridStep) {
+        for (let x = 0; x < width; x += gridStep) {
+          const p = y * width + x;
+          if (dirtMap[p] > 0 && !visited[p]) {
+            let minX = x, maxX = x, minY = y, maxY = y;
+            let count = 0;
+            let totalIntensity = 0;
+
+            const queue = [p];
+            visited[p] = 1;
+
+            while (queue.length > 0 && count < 2000) {
+              const curr = queue.pop();
+              const cx = curr % width;
+              const cy = Math.floor(curr / width);
+
+              count++;
+              totalIntensity += dirtMap[curr];
+
+              if (cx < minX) minX = cx;
+              if (cx > maxX) maxX = cx;
+              if (cy < minY) minY = cy;
+              if (cy > maxY) maxY = cy;
+
+              const neighbors = [
+                curr - gridStep,
+                curr + gridStep,
+                curr - (width * gridStep),
+                curr + (width * gridStep)
+              ];
+
+              for (let n of neighbors) {
+                if (n >= 0 && n < dirtMap.length && !visited[n] && dirtMap[n] > 0) {
+                  visited[n] = 1;
+                  queue.push(n);
+                }
+              }
+            }
+
+            const boxWidth = maxX - minX;
+            const boxHeight = maxY - minY;
+            const radius = Math.max(boxWidth, boxHeight) / 2;
+
+            if (radius >= minRadius) {
+              const avgScore = totalIntensity / count;
+              clusters.push({
+                x: minX,
+                y: minY,
+                w: Math.max(boxWidth, 14),
+                h: Math.max(boxHeight, 14),
+                cx: Math.floor(minX + boxWidth / 2),
+                cy: Math.floor(minY + boxHeight / 2),
+                intensity: avgScore,
+                size: count
+              });
+            }
+          }
+        }
+      }
+
+      return clusters.sort((a, b) => b.intensity - a.intensity).slice(0, 15);
+    }
+
+    function renderOverlays(width, height, clusters) {
+      if (toggleGrid.checked) {
+        viewCtx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+        viewCtx.lineWidth = 1;
+        const gridCols = 8;
+        const gridRows = 6;
+        const cellW = width / gridCols;
+        const cellH = height / gridRows;
+
+        for (let i = 1; i < gridCols; i++) {
+          viewCtx.beginPath();
+          viewCtx.moveTo(i * cellW, 0);
+          viewCtx.lineTo(i * cellW, height);
+          viewCtx.stroke();
+        }
+        for (let j = 1; j < gridRows; j++) {
+          viewCtx.beginPath();
+          viewCtx.moveTo(0, j * cellH);
+          viewCtx.lineTo(width, j * cellH);
+          viewCtx.stroke();
+        }
+      }
+
+      if (toggleBoxes.checked && clusters.length > 0) {
+        clusters.forEach((c, idx) => {
+          let strokeColor = '#f59e0b';
+          if (c.intensity > 40) strokeColor = '#ea580c';
+          if (c.intensity > 60) strokeColor = '#e11d48';
+
+          viewCtx.strokeStyle = strokeColor;
+          viewCtx.lineWidth = 2;
+          viewCtx.strokeRect(c.x - 4, c.y - 4, c.w + 8, c.h + 8);
+
+          viewCtx.beginPath();
+          viewCtx.arc(c.cx, c.cy, 3, 0, Math.PI * 2);
+          viewCtx.fillStyle = strokeColor;
+          viewCtx.fill();
+
+          // High Contrast Clear Label Box
+          viewCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+          viewCtx.fillRect(c.x - 4, Math.max(0, c.y - 22), 68, 16);
+          viewCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+          viewCtx.strokeRect(c.x - 4, Math.max(0, c.y - 22), 68, 16);
+
+          viewCtx.fillStyle = '#ffffff';
+          viewCtx.font = 'bold 10px sans-serif';
+          viewCtx.fillText(`DIRT #${idx + 1}`, c.x - 1, Math.max(10, c.y - 10));
+        });
+      }
+    }
+
+    function updateInspectionStats(totalPixels, dirtPixels, clusters) {
+      const dirtyRatio = (dirtPixels / totalPixels) * 100;
+      const cleanlinessScore = Math.max(0, Math.min(100, 100 - (dirtyRatio * 12))).toFixed(1);
+
+      headerScore.textContent = `${cleanlinessScore}%`;
+      headerCount.textContent = clusters.length;
+
+      if (cleanlinessScore > 90) {
+        headerScore.className = "font-bold text-emerald-400 text-xs";
+      } else if (cleanlinessScore > 75) {
+        headerScore.className = "font-bold text-amber-400 text-xs";
+      } else {
+        headerScore.className = "font-bold text-rose-500 text-xs";
+      }
+
+      hygieneBadge.textContent = `${cleanlinessScore}%`;
+      hygieneBar.style.width = `${cleanlinessScore}%`;
+
+      if (cleanlinessScore > 90) {
+        hygieneBadge.className = "text-3xl font-black font-mono my-1 text-emerald-400";
+        hygieneBar.className = "bg-emerald-400 h-full transition-all duration-500";
+        hygieneVerdict.textContent = "Surface meets cleanliness standards.";
+        hygieneVerdict.className = "text-xs text-emerald-300 font-medium";
+      } else if (cleanlinessScore > 75) {
+        hygieneBadge.className = "text-3xl font-black font-mono my-1 text-amber-400";
+        hygieneBar.className = "bg-amber-400 h-full transition-all duration-500";
+        hygieneVerdict.textContent = "Moderate smudges detected. Cleaning suggested.";
+        hygieneVerdict.className = "text-xs text-amber-300 font-medium";
+      } else {
+        hygieneBadge.className = "text-3xl font-black font-mono my-1 text-rose-500";
+        hygieneBar.className = "bg-rose-500 h-full transition-all duration-500";
+        hygieneVerdict.textContent = "High soil levels! Cleaning required.";
+        hygieneVerdict.className = "text-xs text-rose-300 font-medium";
+      }
+
+      statSpotCount.textContent = clusters.length;
+      statDirtyArea.textContent = `${dirtyRatio.toFixed(2)}%`;
+
+      let lightCount = 0;
+      let modCount = 0;
+      let heavyCount = 0;
+
+      clusters.forEach(c => {
+        if (c.intensity > 60) heavyCount++;
+        else if (c.intensity > 40) modCount++;
+        else lightCount++;
+      });
+
+      cntLight.textContent = lightCount;
+      cntModerate.textContent = modCount;
+      cntHeavy.textContent = heavyCount;
+
+      if (clusters.length === 0) {
+        hotspotList.innerHTML = `<div class="text-xs text-slate-500 text-center py-4 italic">No contamination hotspots recorded.</div>`;
+      } else {
+        hotspotList.innerHTML = clusters.map((c, i) => {
+          let sevColor = "text-amber-400 border-amber-500/30 bg-amber-500/10";
+          let sevLabel = "Light";
+          if (c.intensity > 60) {
+            sevColor = "text-rose-400 border-rose-500/30 bg-rose-500/10";
+            sevLabel = "Heavy";
+          } else if (c.intensity > 40) {
+            sevColor = "text-orange-400 border-orange-500/30 bg-orange-500/10";
+            sevLabel = "Moderate";
+          }
+
+          return `
+            <div class="flex items-center justify-between p-2 bg-slate-950/60 rounded border border-slate-800 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-slate-400">#${i + 1}</span>
+                <span class="text-slate-200">Spot at (${c.cx}, ${c.cy})</span>
+              </div>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono border ${sevColor}">${sevLabel}</span>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    function calibrateBaseline() {
+      const width = offCanvas.width;
+      const height = offCanvas.height;
+      if (!width || !height) return;
+
+      const currentData = offCtx.getImageData(0, 0, width, height);
+      baselineData = new Uint8ClampedArray(currentData.data);
+
+      showToast('Baseline calibrated against current background');
+      requestProcess();
+    }
+
+    function takeSnapshot() {
+      const link = document.createElement('a');
+      link.download = `dirt-inspection-${Date.now()}.png`;
+      link.href = viewCanvas.toDataURL('image/png');
+      link.click();
+      showToast('Inspection image saved');
+    }
+
+    function loadPreset(name) {
+      stopCamera();
+      const genFn = presetGenerators[name];
+      if (!genFn) return;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+
+      genFn(ctx, 640, 480);
+
+      const img = new Image();
+      img.onload = () => {
+        currentImage = img;
+        placeholderUI.classList.add('hidden');
+        statusIndicator.className = "w-2 h-2 rounded-full bg-indigo-400";
+        statusText.textContent = `Preset: ${name.replace('-', ' ')}`;
+        processStaticImage();
+      };
+      img.src = canvas.toDataURL();
+    }
+
+    function createDirtyTableSample(ctx, w, h) {
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#d97706');
+      grad.addColorStop(1, '#b45309');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.beginPath();
+      ctx.arc(w * 0.4, h * 0.45, 45, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(67, 20, 7, 0.75)';
+      ctx.lineWidth = 12;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(78, 32, 11, 0.6)';
+      ctx.beginPath();
+      ctx.ellipse(w * 0.7, h * 0.6, 50, 30, Math.PI / 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      for (let i = 0; i < 40; i++) {
+        const x = Math.random() * w;
+        const y = Math.random() * h;
+        const r = Math.random() * 3 + 1;
+        ctx.fillStyle = 'rgba(40, 20, 10, 0.8)';
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function createSmudgedGlassSample(ctx, w, h) {
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, 0, w, h);
+
+      for (let i = 0; i < 5; i++) {
+        const x = 100 + i * 110;
+        const y = 120 + (i % 2) * 80;
+        const grad = ctx.createRadialGradient(x, y, 5, x, y, 40);
+        grad.addColorStop(0, 'rgba(148, 163, 184, 0.35)');
+        grad.addColorStop(1, 'rgba(30, 41, 59, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, 45, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function createCleanTileSample(ctx, w, h) {
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(10, 10, w - 20, h - 20);
+
+      ctx.fillStyle = 'rgba(100, 116, 139, 0.4)';
+      ctx.beginPath();
+      ctx.arc(w * 0.8, h * 0.3, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      toastMsg.textContent = msg;
+
+      toast.classList.remove('opacity-0', 'pointer-events-none');
+      toast.classList.add('opacity-100');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100');
+        toast.classList.add('opacity-0', 'pointer-events-none');
+      }, 2500);
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
